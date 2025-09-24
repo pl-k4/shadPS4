@@ -112,8 +112,8 @@ void MemoryManager::SetPrtArea(u32 id, VAddr address, u64 size) {
 }
 
 void MemoryManager::CopySparseMemory(VAddr virtual_addr, u8* dest, u64 size) {
-    ASSERT_MSG(IsValidAddress(reinterpret_cast<void*>(virtual_addr)),
-               "Attempted to access invalid address {:#x}", virtual_addr);
+    // ASSERT_MSG(IsValidAddress(reinterpret_cast<void*>(virtual_addr)),
+    //            "Attempted to access invalid address {:#x}", virtual_addr);
 
     auto vma = FindVMA(virtual_addr);
     while (size) {
