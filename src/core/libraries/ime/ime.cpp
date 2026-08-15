@@ -12,6 +12,7 @@
 #include "core/libraries/kernel/process.h"
 #include "core/libraries/libs.h"
 #include "core/tls.h"
+#include <input/input_handler.h>
 
 namespace Libraries::Ime {
 
@@ -230,14 +231,19 @@ public:
 
     Error Update(OrbisImeEventHandler handler) {
         if (!m_ime_mode) {
-            /* We don't handle any events for ImeKeyboard */
-            return Error::OK;
+            LOG_INFO(Lib_Ime, "Update !m_ime_mode");
+            OrbisImeEvent ev;
+            while (Input::g_keyboard_state.PopEvent(ev)) {
+                
+                Execute(handler, &ev, false); // Execute calls handler(m_arg, &ev)
+            }
         }
         if (!g_ime_state) {
             LOG_ERROR(Lib_Ime, "ImeHandler::Update called without active IME state");
             return Error::INTERNAL;
         }
 
+        LOG_INFO(Lib_Ime, "Update m_ime_mode");
         std::unique_lock<std::mutex> lock{g_ime_state->queue_mutex};
 
         while (!g_ime_state->event_queue.empty()) {
@@ -988,6 +994,7 @@ int PS4_SYSV_ABI sceImeSetTextGeometry(OrbisImeTextAreaMode mode,
 }
 
 Error PS4_SYSV_ABI sceImeUpdate(OrbisImeEventHandler handler) {
+    LOG_INFO(Lib_Ime, "sceImeUpdate called");
     if (!g_ime_handler && !g_keyboard_handler) {
         LOG_ERROR(Lib_Ime, "sceImeUpdate called with no active handler");
         return Error::NOT_OPENED;

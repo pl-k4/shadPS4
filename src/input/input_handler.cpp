@@ -1017,4 +1017,6 @@ void ActivateOutputsFromInputs() {
     }
 }
 
+GlobalKeyboardState g_keyboard_state;
+
 } // namespace Input

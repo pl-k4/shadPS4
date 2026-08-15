@@ -29,11 +29,14 @@
 #include "input/input_mouse.h"
 #include "sdl_window.h"
 #include "video_core/renderdoc.h"
+#include "input/input_handler.h"
 
 #ifdef __APPLE__
 #include <SDL3/SDL_metal.h>
 #endif
 #include <core/emulator_settings.h>
+#include <core/libraries/ime/ime_common.h>
+#include <core/libraries/ime/ime.h>
 #include "core/libraries/mouse/sdl_mouse.h"
 
 CMRC_DECLARE(res);
@@ -377,6 +380,345 @@ Uint32 wheelOffCallback(void* og_event, Uint32 timer_id, Uint32 interval) {
     return 0;
 }
 
+u16 MapSDLKeyToOrbisKeycode(SDL_Keycode key) {
+    // If the key is a scancode-based key (mask set), extract the low byte.
+    if (key & SDLK_SCANCODE_MASK) {
+        // The scancode is the lower 16 bits (actually lower byte? but safe to mask)
+        u32 scancode = key & ~SDLK_SCANCODE_MASK;
+        // Scancode values match HID usage IDs directly.
+        if (scancode <= 0xE7) {
+            return static_cast<u16>(scancode);
+        }
+        // Some extended keys might have extra bits; fallback to 0.
+        return 0;
+    }
+
+    // Printable characters (ASCII range 0x20-0x7F, plus a few extended like 0xB1)
+    // Map common symbols to HID usage IDs.
+    switch (key) {
+    case SDLK_RETURN:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Return);
+    case SDLK_ESCAPE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Escape);
+    case SDLK_BACKSPACE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Backspace);
+    case SDLK_TAB:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Tab);
+    case SDLK_SPACE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Spacebar);
+    case SDLK_EXCLAIM: // '!' -> Shift+1 -> usage 0x1E (Key1)
+    case SDLK_1:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key1);
+    case SDLK_DBLAPOSTROPHE: // '"' -> Shift+'
+    case SDLK_APOSTROPHE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::SingleQuote);
+    case SDLK_HASH: // '#' -> Shift+3
+    case SDLK_3:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key3);
+    case SDLK_DOLLAR: // '$' -> Shift+4
+    case SDLK_4:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key4);
+    case SDLK_PERCENT: // '%' -> Shift+5
+    case SDLK_5:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key5);
+    case SDLK_AMPERSAND: // '&' -> Shift+7
+    case SDLK_7:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key7);
+    case SDLK_LEFTPAREN: // '(' -> Shift+9
+    case SDLK_9:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key9);
+    case SDLK_RIGHTPAREN: // ')' -> Shift+0
+    case SDLK_0:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key0);
+    case SDLK_ASTERISK: // '*' -> Shift+8
+    case SDLK_8:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key8);
+    case SDLK_PLUS: // '+' -> Shift+=
+    case SDLK_EQUALS:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Equal);
+    case SDLK_COMMA:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Comma);
+    case SDLK_MINUS:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Minus);
+    case SDLK_PERIOD:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Period);
+    case SDLK_SLASH:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Slash);
+    case SDLK_COLON: // ':' -> Shift+;
+    case SDLK_SEMICOLON:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Semicolon);
+    case SDLK_LESS:     // '<' -> Shift+,
+    case SDLK_GREATER:  // '>' -> Shift+.
+    case SDLK_QUESTION: // '?' -> Shift+/
+    case SDLK_AT:       // '@' -> Shift+2
+    case SDLK_2:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key2);
+    case SDLK_LEFTBRACKET:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::LeftBracket);
+    case SDLK_BACKSLASH:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Backslash);
+    case SDLK_RIGHTBRACKET:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::RightBracket);
+    case SDLK_CARET: // '^' -> Shift+6
+    case SDLK_6:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Key6);
+    case SDLK_UNDERSCORE: // '_' -> Shift+-
+    case SDLK_GRAVE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::BackQuote);
+    case SDLK_LEFTBRACE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::LeftBracket); // same as [?
+    case SDLK_PIPE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Backslash);
+    case SDLK_RIGHTBRACE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::RightBracket);
+    case SDLK_TILDE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::BackQuote);
+    case SDLK_DELETE:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Delete);
+    case SDLK_PLUSMINUS:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::KeypadPlusMinus);
+    // Letters: ASCII a-z
+    case SDLK_A:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::A);
+    case SDLK_B:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::B);
+    case SDLK_C:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::C);
+    case SDLK_D:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::D);
+    case SDLK_E:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::E);
+    case SDLK_F:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::F);
+    case SDLK_G:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::G);
+    case SDLK_H:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::H);
+    case SDLK_I:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::I);
+    case SDLK_J:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::J);
+    case SDLK_K:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::K);
+    case SDLK_L:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::L);
+    case SDLK_M:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::M);
+    case SDLK_N:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::N);
+    case SDLK_O:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::O);
+    case SDLK_P:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::P);
+    case SDLK_Q:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Q);
+    case SDLK_R:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::R);
+    case SDLK_S:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::S);
+    case SDLK_T:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::T);
+    case SDLK_U:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::U);
+    case SDLK_V:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::V);
+    case SDLK_W:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::W);
+    case SDLK_X:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::X);
+    case SDLK_Y:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Y);
+    case SDLK_Z:
+        return static_cast<u16>(Input::OrbisImeKeycodeEnum::Z);
+    default:
+        break;
+    }
+
+    // If we have an extended key with the extended mask (0x20000000), try to map it.
+    if (key & SDLK_EXTENDED_MASK) {
+        // For simplicity, fall back to scancode extraction if the key is not recognized.
+        u32 scancode = key & ~(SDLK_SCANCODE_MASK | SDLK_EXTENDED_MASK);
+        if (scancode <= 0xE7)
+            return static_cast<u16>(scancode);
+    }
+
+    return 0; // Unknown
+}
+
+char16_t GetCharacterFromKey(SDL_Keycode key, SDL_Keymod mod_state, bool is_keypad) {
+    // Non‑printable keys return 0
+    if (key < SDLK_SPACE || key > SDLK_DELETE) {
+        return 0;
+    }
+
+    // For keypad keys, we might want to map them separately; for simplicity, treat as unshifted
+    // digit.
+    if (is_keypad) {
+        // Keypad digits produce the same character as main keyboard digits (no shift effect)
+        switch (key) {
+        case SDLK_KP_0:
+            return u'0';
+        case SDLK_KP_1:
+            return u'1';
+        case SDLK_KP_2:
+            return u'2';
+        case SDLK_KP_3:
+            return u'3';
+        case SDLK_KP_4:
+            return u'4';
+        case SDLK_KP_5:
+            return u'5';
+        case SDLK_KP_6:
+            return u'6';
+        case SDLK_KP_7:
+            return u'7';
+        case SDLK_KP_8:
+            return u'8';
+        case SDLK_KP_9:
+            return u'9';
+        case SDLK_KP_PERIOD:
+            return u'.';
+        case SDLK_KP_DIVIDE:
+            return u'/';
+        case SDLK_KP_MULTIPLY:
+            return u'*';
+        case SDLK_KP_MINUS:
+            return u'-';
+        case SDLK_KP_PLUS:
+            return u'+';
+        case SDLK_KP_ENTER:
+            return u'\r';
+        default:
+            return 0;
+        }
+    }
+
+    // Determine if Shift is active (either left or right)
+    bool shift = (mod_state & (SDL_KMOD_LSHIFT | SDL_KMOD_RSHIFT)) != 0;
+    bool caps = (mod_state & SDL_KMOD_CAPS) != 0;
+
+    // For letters: apply Shift XOR Caps to determine case
+    if (key >= SDLK_A && key <= SDLK_Z) {
+        bool upper = shift ^ caps;                  // XOR: Caps inverts the effect of Shift
+        char16_t base = static_cast<char16_t>(key); // SDLK_a = 'a' (97)
+        if (upper) {
+            return base - u'a' + u'A';
+        } else {
+            return base;
+        }
+    }
+
+    // For numbers and symbols: use a lookup table for shifted versions
+    static const struct {
+        SDL_Keycode unshifted;
+        char16_t unshifted_char;
+        char16_t shifted_char;
+    } symbol_map[] = {
+        {SDLK_SPACE, u' ', u' '},
+        {SDLK_EXCLAIM, u'!', u'!'}, // Actually exclam is already shifted; handle via key
+        {SDLK_APOSTROPHE, u'\'', u'"'},
+        {SDLK_HASH, u'#', u'#'},
+        {SDLK_DOLLAR, u'$', u'$'},
+        {SDLK_PERCENT, u'%', u'%'},
+        {SDLK_AMPERSAND, u'&', u'&'},
+        {SDLK_LEFTPAREN, u'(', u'('},
+        {SDLK_RIGHTPAREN, u')', u')'},
+        {SDLK_ASTERISK, u'*', u'*'},
+        {SDLK_PLUS, u'+', u'+'},
+        {SDLK_COMMA, u',', u'<'},
+        {SDLK_MINUS, u'-', u'_'},
+        {SDLK_PERIOD, u'.', u'>'},
+        {SDLK_SLASH, u'/', u'?'},
+        {SDLK_0, u'0', u')'},
+        {SDLK_1, u'1', u'!'},
+        {SDLK_2, u'2', u'@'},
+        {SDLK_3, u'3', u'#'},
+        {SDLK_4, u'4', u'$'},
+        {SDLK_5, u'5', u'%'},
+        {SDLK_6, u'6', u'^'},
+        {SDLK_7, u'7', u'&'},
+        {SDLK_8, u'8', u'*'},
+        {SDLK_9, u'9', u'('},
+        {SDLK_COLON, u':', u':'},
+        {SDLK_SEMICOLON, u';', u':'},
+        {SDLK_LESS, u'<', u'<'},
+        {SDLK_EQUALS, u'=', u'+'},
+        {SDLK_GREATER, u'>', u'>'},
+        {SDLK_QUESTION, u'?', u'?'},
+        {SDLK_AT, u'@', u'@'},
+        {SDLK_LEFTBRACKET, u'[', u'{'},
+        {SDLK_BACKSLASH, u'\\', u'|'},
+        {SDLK_RIGHTBRACKET, u']', u'}'},
+        {SDLK_CARET, u'^', u'^'},
+        {SDLK_UNDERSCORE, u'_', u'_'},
+        {SDLK_GRAVE, u'`', u'~'},
+        {SDLK_LEFTBRACE, u'{', u'{'},
+        {SDLK_PIPE, u'|', u'|'},
+        {SDLK_RIGHTBRACE, u'}', u'}'},
+        {SDLK_TILDE, u'~', u'~'},
+        {SDLK_DELETE, u'\x7F', u'\x7F'},
+    };
+
+    for (const auto& entry : symbol_map) {
+        if (key == entry.unshifted) {
+            return shift ? entry.shifted_char : entry.unshifted_char;
+        }
+    }
+
+    // Fallback: return the keycode as a character if it's within ASCII range (unlikely)
+    if (key >= 0x20 && key <= 0x7E) {
+        return static_cast<char16_t>(key);
+    }
+    return 0;
+}
+
+OrbisImeKeycode MakeOrbisKeycode(const SDL_Event* event, u32 user_id) {
+    OrbisImeKeycode kc = {};
+    kc.keycode = static_cast<u16>(event->key.scancode); // Direct USB HID usage ID
+    kc.user_id = user_id;
+    kc.resource_id = 0;
+    kc.type = OrbisImeKeyboardType::ENGLISH_US; // Assume standard keyboard
+    // Get timestamp (SDL provides event->key.timestamp in ms; convert to OrbisRtcTick)
+    kc.timestamp.tick = event->key.timestamp * 1000; // Convert ms to microseconds? Check definition
+
+
+    // Build status flags (OrbisImeKeycodeState)
+    u32 status = (u32)OrbisImeKeycodeState::KEYCODE_VALID;
+    SDL_Keymod mod = event->key.mod;
+    if (mod & SDL_KMOD_LCTRL)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_L_CTRL;
+    if (mod & SDL_KMOD_RCTRL)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_R_CTRL;
+    if (mod & SDL_KMOD_LSHIFT)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_L_SHIFT;
+    if (mod & SDL_KMOD_RSHIFT)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_R_SHIFT;
+    if (mod & SDL_KMOD_LALT)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_L_ALT;
+    if (mod & SDL_KMOD_RALT)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_R_ALT;
+    if (mod & SDL_KMOD_LGUI)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_L_GUI;
+    if (mod & SDL_KMOD_RGUI)
+        status |= (u32)OrbisImeKeycodeState::MODIFIER_R_GUI;
+    if (mod & SDL_KMOD_CAPS)
+        status |= (u32)OrbisImeKeycodeState::LED_CAPS_LOCK;
+    if (mod & SDL_KMOD_NUM)
+        status |= (u32)OrbisImeKeycodeState::LED_NUM_LOCK;
+    // ScrollLock not available in mod, query separately if needed
+    if (event->key.repeat)
+        status |= (u32)OrbisImeKeycodeState::CONTINUOUS_EVENT;
+
+    kc.status = status;
+
+    // Determine if this key is from the keypad (scancode range 0x54-0x67 etc.)
+    bool is_keypad = (event->key.scancode >= SDL_SCANCODE_KP_DIVIDE &&
+                      event->key.scancode <= SDL_SCANCODE_KP_EQUALS);
+    kc.character = GetCharacterFromKey(event->key.key, mod, is_keypad);
+
+    return kc;
+}
+
 void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
     using Libraries::Pad::OrbisPadButtonDataOffset;
 
@@ -398,6 +740,29 @@ void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
     // update bindings
     if (inputs_changed) {
         Input::ActivateOutputsFromInputs();
+    }
+
+    if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
+        bool is_down = (event->type == SDL_EVENT_KEY_DOWN);
+        bool is_repeat = (event->key.repeat != 0);
+
+        // Respect keyboard option Repeat
+        //if (!(ime_mgr->GetKeyboardOptions() & OrbisImeKeyboardOption::Repeat) && is_repeat) {
+        //    return;
+        //}
+
+        OrbisImeEvent ev = {};
+        if (is_down) {
+            ev.id = is_repeat ? OrbisImeEventId::KeyboardKeycodeRepeat
+                              : OrbisImeEventId::KeyboardKeycodeDown;
+        } else {
+            ev.id = OrbisImeEventId::KeyboardKeycodeUp;
+        }
+
+        // Fill the keycode structure
+        ev.param.keycode = MakeOrbisKeycode(event, 0); // GetUserId from manager
+
+        Input::g_keyboard_state.PushEvent(ev);
     }
 }
 
