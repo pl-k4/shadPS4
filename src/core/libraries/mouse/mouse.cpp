@@ -15,6 +15,7 @@
 
 #define SCE_MOUSE_DUMMY_HANDLE 67
 
+extern Frontend::WindowSDL* g_window;
 std::queue<SceMouseData> g_mouse_state;
 
 #include "mouse_error.h"
