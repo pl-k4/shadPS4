@@ -82,6 +82,8 @@ public:
 
     void CaptureMouse(bool capture);
 
+    void SetShouldIgnoreCustomMappings(bool ignore);
+
 private:
     void OnResize();
     void OnKeyboardMouseInput(const SDL_Event* event);
