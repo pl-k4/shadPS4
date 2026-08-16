@@ -6,7 +6,6 @@
 #include "common/enum.h"
 #include "common/ring_buffer_queue.h"
 #include "core/libraries/system/userservice.h"
-#include "mouse_common.h"
 
 namespace Core::Loader {
 class SymbolsResolver;
@@ -50,8 +49,9 @@ s32 PS4_SYSV_ABI sceMouseDisconnectPort();
 s32 PS4_SYSV_ABI sceMouseGetDeviceInfo();
 s32 PS4_SYSV_ABI sceMouseInit();
 s32 PS4_SYSV_ABI sceMouseMbusInit();
-int PS4_SYSV_ABI sceMouseOpen(int userId, int type, int index, SceMouseOpenParam* pParam);
-int PS4_SYSV_ABI sceMouseRead(int handle, SceMouseData* pData, int num);
+s32 PS4_SYSV_ABI sceMouseOpen(Libraries::UserService::OrbisUserServiceUserId userId, s32 type,
+                              s32 index, OrbisMouseOpenParam* pParam);
+s32 PS4_SYSV_ABI sceMouseRead(s32 handle, OrbisMouseData* pData, s32 num);
 s32 PS4_SYSV_ABI sceMouseSetHandType();
 s32 PS4_SYSV_ABI sceMouseSetPointerSpeed();
 s32 PS4_SYSV_ABI sceMouseSetProcessPrivilege();

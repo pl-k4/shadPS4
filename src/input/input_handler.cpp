@@ -22,7 +22,6 @@
 #include "common/io_file.h"
 #include "common/path_util.h"
 #include "common/singleton.h"
-#include "core/libraries/mouse/mouse_common.h"
 #include "core/devtools/layer.h"
 #include "core/emulator_settings.h"
 #include "core/emulator_state.h"
@@ -1019,7 +1018,5 @@ void ActivateOutputsFromInputs() {
 }
 
 GlobalKeyboardState g_keyboard_state;
-std::queue<SceMouseData> g_mouse_state;
-std::mutex g_mouse_mutex;
 
 } // namespace Input

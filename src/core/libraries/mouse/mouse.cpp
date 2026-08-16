@@ -9,15 +9,6 @@
 #include "core/libraries/libs.h"
 #include "core/user_settings.h"
 #include "mouse.h"
-#include "SDL3/SDL_mouse.h"
-#include "input/input_handler.h"
-#include <queue>
-
-#define SCE_MOUSE_DUMMY_HANDLE 67
-
-extern Frontend::WindowSDL* g_window;
-std::queue<SceMouseData> g_mouse_state;
-
 #include "mouse_error.h"
 #include "sdl_window.h"
 
@@ -31,8 +22,12 @@ s32 mouse_sdl_handles[2]{-1, -1};
 bool g_lib_init = false, g_is_merged_mode = false, g_are_mice_enabled;
 
 int PS4_SYSV_ABI sceMouseClose(s32 handle) {
-    g_window->CaptureMouse(false);
-    g_window->SetShouldIgnoreCustomMappings(false);
+    LOG_INFO(Lib_Mouse, "(DUMMY) called, handle: {}", handle);
+    if (mouse_handles[0] != handle && mouse_handles[1] != handle) {
+        return ORBIS_MOUSE_ERROR_INVALID_HANDLE;
+    }
+    u64 m = mouse_handles[0] == handle ? 0 : 1;
+    mouse_handles[m] = -1;
     return ORBIS_OK;
 }
 
@@ -88,33 +83,52 @@ int PS4_SYSV_ABI sceMouseMbusInit() {
     return ORBIS_OK;
 }
 
-int PS4_SYSV_ABI sceMouseOpen(int userId, int type, int index, SceMouseOpenParam* pParam) {
-    g_window->CaptureMouse(true);
-    g_window->SetShouldIgnoreCustomMappings(true);
-    return SCE_MOUSE_DUMMY_HANDLE;
-} // just replacing the shadps4 one because idk what im doing lol
-
-int PS4_SYSV_ABI sceMouseRead(int handle, SceMouseData* pData, int num) {
-    if (handle != SCE_MOUSE_DUMMY_HANDLE)
-        return ORBIS_FAIL;
-    if (!pData || num <= 0)
-        return ORBIS_FAIL;
-
-    int count = 0;
-
-    std::lock_guard<std::mutex> lock(Input::g_mouse_mutex);
-
-    while (count < num && !Input::g_mouse_state.empty()) {
-        SceMouseData& src = Input::g_mouse_state.front();
-        SceMouseData& dst = pData[count];
-
-        dst = src;
-
-        Input::g_mouse_state.pop();
-        count++;
+int PS4_SYSV_ABI sceMouseOpen(Libraries::UserService::OrbisUserServiceUserId userId, s32 type,
+                              s32 index, OrbisMouseOpenParam* pParam) {
+    LOG_WARNING(Lib_Mouse, "(DUMMY) called, uid: {}, type: {}, index: {}", userId, type, index);
+    auto u = UserManagement.GetUserByID(userId);
+    if (!u || type != 0 || index < 0 || index > 1) {
+        LOG_ERROR(Lib_Mouse, "invalid argument");
+        return ORBIS_MOUSE_ERROR_INVALID_ARG;
     }
+    MouseOpenBehaviour mouse_mode = pParam ? pParam->flag : MouseOpenBehaviour::Normal;
+    bool merged_mode = True(mouse_mode & MouseOpenBehaviour::Merged);
+    if (merged_mode && index != 0) {
+        LOG_ERROR(Lib_Mouse, "Only one mouse can be opened in merged mode!");
+        return ORBIS_MOUSE_ERROR_ALREADY_OPENED;
+    }
+    g_is_merged_mode = merged_mode;
+    if (mouse_handles[index] != -1) {
+        LOG_ERROR(Lib_Mouse, "already opened");
+        return ORBIS_MOUSE_ERROR_ALREADY_OPENED;
+    }
+    mouse_handles[index] = index;
+    LOG_INFO(Lib_Mouse, "out handle: {}", mouse_handles[index]);
+    return mouse_handles[index];
+}
 
-    return count;
+int PS4_SYSV_ABI sceMouseRead(s32 handle, OrbisMouseData* pData, s32 num) {
+    LOG_DEBUG(Lib_Mouse, "(DUMMY) called, h: {}, n: {}", handle, num);
+    if (!pData || num < 1 || num > 64) {
+        return ORBIS_MOUSE_ERROR_INVALID_ARG;
+    }
+    if (mouse_handles[0] != handle && mouse_handles[1] != handle) {
+        return ORBIS_MOUSE_ERROR_INVALID_HANDLE;
+    }
+    u64 m = mouse_handles[0] == handle ? 0 : 1;
+    int i = 0;
+    if (!g_are_mice_enabled) {
+        pData[0] = {.connected = false};
+        return 1;
+    }
+    for (; i < num; i++) {
+        std::optional<OrbisMouseData> st = mouse_states[m].Pop();
+        if (!st) {
+            break;
+        }
+        pData[i] = *st;
+    }
+    return i;
 }
 
 int PS4_SYSV_ABI sceMouseSetHandType() {
@@ -129,11 +143,6 @@ int PS4_SYSV_ABI sceMouseSetPointerSpeed() {
 
 int PS4_SYSV_ABI sceMouseSetProcessPrivilege() {
     LOG_ERROR(Lib_Mouse, "(STUBBED) called");
-    return ORBIS_OK;
-}
-
-int PS4_SYSV_ABI sceImeVshUpdateContext2(void*) {
-    LOG_ERROR(Lib_Ime, "(STUBBED) called");
     return ORBIS_OK;
 }
 
