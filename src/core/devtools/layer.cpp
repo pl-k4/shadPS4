@@ -21,7 +21,6 @@
 #include "widget/memory_map.h"
 #include "widget/module_list.h"
 #include "widget/shader_list.h"
-#include <sdl_window.h>
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 
@@ -378,7 +377,6 @@ bool L::ShouldKeepDrawing() {
     return DebugState.IsShowingDebugMenuBar();
 }
 
-extern Frontend::WindowSDL* g_window;
 void L::Draw() {
     const auto io = GetIO();
     PushID("DevtoolsLayer");
@@ -391,7 +389,6 @@ void L::Draw() {
     if (IsKeyPressed(ImGuiKey_F10, false)) {
         if (io.KeyCtrl) {
             DebugState.IsShowingDebugMenuBar() ^= true;
-            g_window->CaptureMouse(!DebugState.IsShowingDebugMenuBar());
         }
         visibility_toggled = true;
     }
