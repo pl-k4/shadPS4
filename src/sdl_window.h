@@ -80,6 +80,8 @@ public:
     void RequestKeyboard();
     void ReleaseKeyboard();
 
+    void CaptureMouse(bool capture);
+
 private:
     void OnResize();
     void OnKeyboardMouseInput(const SDL_Event* event);
@@ -93,6 +95,7 @@ private:
     SDL_Window* window{};
     bool is_shown{};
     bool is_open{true};
+    bool should_ignore_custom_mappings = false;
 };
 
 void SetWindowIcon(SDL_Window* window, const std::vector<u8>& png);

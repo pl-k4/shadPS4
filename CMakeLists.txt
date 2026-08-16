@@ -1205,7 +1205,7 @@ set(EMULATOR src/emulator.cpp
              src/emulator.h
              src/sdl_window.h
              src/sdl_window.cpp
-)
+"src/core/libraries/mouse/mouse_common.h")
 
 # shadNet protobuf generation
 set(SHADNET_PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/shadnet_proto_gen")

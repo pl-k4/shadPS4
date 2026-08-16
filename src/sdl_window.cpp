@@ -39,6 +39,11 @@
 #include <core/libraries/ime/ime.h>
 #include "core/libraries/mouse/sdl_mouse.h"
 
+#define SCE_MOUSE_BUTTON_PRIMARY 0x00000001
+#define SCE_MOUSE_BUTTON_SECONDARY 0x00000002
+#define SCE_MOUSE_BUTTON_OPTIONAL 0x00000004
+
+
 CMRC_DECLARE(res);
 
 namespace Frontend {
@@ -244,6 +249,7 @@ void WindowSDL::WaitEvent() {
     case SDL_EVENT_GAMEPAD_REMOVED:
         controllers.TryOpenSDLControllers();
         break;
+    case SDL_EVENT_MOUSE_MOTION:
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP:
     case SDL_EVENT_GAMEPAD_AXIS_MOTION:
@@ -366,6 +372,20 @@ void WindowSDL::ReleaseKeyboard() {
             true);
     }
 }
+
+void WindowSDL::CaptureMouse(bool capture) {
+    SDL_SetWindowRelativeMouseMode(window, capture);
+    if (capture)
+        SDL_HideCursor();
+    else
+        SDL_ShowCursor();
+}
+
+void WindowSDL::SetShouldIgnoreCustomMappings(bool ignore) 
+{
+    should_ignore_custom_mappings = ignore;
+}
+
 
 void WindowSDL::OnResize() {
     SDL_GetWindowSizeInPixels(window, &width, &height);
@@ -734,14 +754,64 @@ void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
         SDL_AddTimer(33, wheelOffCallback, (void*)copy);
     }
 
-    // add/remove it from the list
-    bool inputs_changed = Input::UpdatePressedKeys(input_event);
+    if (event->type == SDL_EVENT_MOUSE_MOTION || event->type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+        event->type == SDL_EVENT_MOUSE_BUTTON_UP || event->type == SDL_EVENT_MOUSE_WHEEL) {
+        SceMouseData mouseData{};
+        mouseData.timestamp = SDL_GetTicks();
+        mouseData.connected = true;
+        
+        const SDL_MouseButtonFlags buttonState = SDL_GetMouseState(nullptr, nullptr);
+        if (buttonState & SDL_BUTTON_MASK(SDL_BUTTON_LEFT))
+            mouseData.buttons |= SCE_MOUSE_BUTTON_PRIMARY;
+        if (buttonState & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT))
+            mouseData.buttons |= SCE_MOUSE_BUTTON_SECONDARY;
+        if (buttonState & SDL_BUTTON_MASK(SDL_BUTTON_X1))
+            mouseData.buttons |= SCE_MOUSE_BUTTON_OPTIONAL;
 
-    // update bindings
-    if (inputs_changed) {
-        Input::ActivateOutputsFromInputs();
+        switch (event->type) {
+        case SDL_EVENT_MOUSE_MOTION:
+            mouseData.xAxis = static_cast<int32_t>(event->motion.xrel);
+            mouseData.yAxis = static_cast<int32_t>(event->motion.yrel);
+            break;
+        case SDL_EVENT_MOUSE_WHEEL:
+            mouseData.wheel = static_cast<int32_t>(event->wheel.y);
+            mouseData.tilt = static_cast<int32_t>(event->wheel.x);
+            break;
+        default:
+            break;
+        }
+
+        std::lock_guard<std::mutex> lock(Input::g_mouse_mutex);
+
+        bool merged = false;
+        if (event->type == SDL_EVENT_MOUSE_MOTION && !Input::g_mouse_state.empty()) {
+            SceMouseData& back = Input::g_mouse_state.back();
+            if (back.buttons == mouseData.buttons && back.wheel == 0 && back.tilt == 0) {
+                back.xAxis += mouseData.xAxis;
+                back.yAxis += mouseData.yAxis;
+                back.timestamp = mouseData.timestamp;
+                merged = true;
+            }
+        }
+
+        if (!merged) {
+            if (Input::g_mouse_state.size() >= 8) {
+                Input::g_mouse_state.pop();
+            }
+            Input::g_mouse_state.push(mouseData);
+        }
     }
 
+    // add/remove it from the list
+    if (!should_ignore_custom_mappings)
+    {
+        bool inputs_changed = Input::UpdatePressedKeys(input_event);
+        
+        // update bindings
+        if (inputs_changed) {
+            Input::ActivateOutputsFromInputs();
+        }
+    }
     if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         bool is_down = (event->type == SDL_EVENT_KEY_DOWN);
         bool is_repeat = (event->key.repeat != 0);
